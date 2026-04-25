@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jarvis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/atom-one-dark.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        :root {
+            --bg: #0f1014;
+            --panel: #14161c;
+            --panel-soft: #111318;
+            --fg: #c0c8d4;
+            --muted: #8b91a1;
+            --accent: #71717a;
+            --border: #27272a;
+            --error: #f87171;
+            --success: #4ade80;
+            --user-bg: #1b1e26;
+            --assistant-bg: #171920;
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at top right, #191c24 0%, var(--bg) 48%), var(--bg);
+            color: var(--fg);
+            font-family: "Geist", sans-serif;
+        }
+
+        .app {
+            height: 100vh;
+            display: flex;
+        }
+
+        /* ── Chat panel ── */
+        .chat-panel {
+            width: 60%;
+            min-width: 0;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            background: linear-gradient(180deg, #12141a 0%, #0f1014 100%);
+        }
+
+        /* ── Terminal panel ── */
+        .terminal-panel {
+            width: 40%;
+            min-width: 280px;
+            display: flex;
+            flex-direction: column;
+            background: var(--panel-soft);
+            transition: width 180ms ease, min-width 180ms ease, opacity 180ms ease;
+            border-left: 1px solid var(--border);
+        }
+
+        .app.terminal-collapsed .terminal-panel {
+            width: 0;
+            min-width: 0;
+            opacity: 0;
+            overflow: hidden;
+            border-left: 0;
+        }
+
+        /* ── Topbar ── */
+        .topbar {
+            height: 52px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 14px;
+            font-weight: 500;
+            letter-spacing: 0.01em;
+            background: rgba(255,255,255,0.01);
+            flex-shrink: 0;
+        }
+
+        .topbar-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .topbar-title {
+            color: #d2d8e3;
+            font-size: 14px;
+        }
+
+        .model-badge {
+            font-size: 11px;
+            font-family: "JetBrains Mono", monospace;
+            color: var(--muted);
+            background: #1a1d25;
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 2px 7px;
+            letter-spacing: 0;
+        }
+
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 999px;
+            background: #4ade80;
+            flex-shrink: 0;
+            transition: background 200ms ease;
+        }
+
+        .status-dot.busy {
+            background: #facc15;
+            animation: pulse-dot 1s infinite ease-in-out;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .icon-btn, .action-btn {
+            border: 1px solid var(--border);
+            color: var(--fg);
+            background: #181b22;
+            border-radius: 8px;
+            font-family: "Geist", sans-serif;
+            font-size: 13px;
+            padding: 6px 10px;
+            cursor: pointer;
+            transition: background 120ms ease;
+        }
+
+        .icon-btn:hover, .action-btn:hover {
+            background: #1d212a;
+        }
+
+        /* ── Chat scroll ── */
+        .chat-scroll {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        /* ── Messages ── */
+        .msg {
+            max-width: min(82%, 900px);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 12px 14px;
+            line-height: 1.5;
+            font-size: 14px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.18);
+            word-break: break-word;
+        }
+
+        .msg.user {
+            margin-left: auto;
+            background: var(--user-bg);
+        }
+
+        .msg.assistant {
+            margin-right: auto;
+            background: var(--assistant-bg);
+        }
+
+        .msg.error {
+            margin-right: auto;
+            border-color: #632828;
+            color: #fecaca;
+            background: #2b1414;
+        }
+
+        .msg p { margin: 0.35em 0; }
+        .msg p:first-child { margin-top: 0; }
+        .msg p:last-child { margin-bottom: 0; }
+
+        .msg pre {
+            margin: 10px 0;
+            border-radius: 8px;
+            background: #0f1117;
+            border: 1px solid #1f232d;
+            overflow: hidden;
+            font-family: "JetBrains Mono", monospace;
+            font-size: 12.5px;
+            position: relative;
+        }
+
+        .msg pre .copy-btn {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            background: #1d212a;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            border-radius: 5px;
+            font-size: 11px;
+            font-family: "Geist", sans-serif;
+            padding: 2px 7px;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 120ms ease;
+        }
+
+        .msg pre:hover .copy-btn { opacity: 1; }
+        .msg pre .copy-btn:hover { color: var(--fg); }
+
+        .msg pre code {
+            display: block;
+            padding: 12px;
+            overflow-x: auto;
+        }
+
+        .msg code {
+            font-family: "JetBrains Mono", monospace;
+            font-size: 12.5px;
+        }
+
+        /* inline code */
+        .msg :not(pre) > code {
+            background: #1a1d25;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1px 5px;
+        }
+
+        /* ── Typing indicator ── */
+        .typing {
+            margin-top: 4px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--muted);
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 140ms ease;
+            height: 20px;
+        }
+
+        .typing.visible { opacity: 1; }
+
+        .typing .dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 999px;
+            background: var(--accent);
+            animation: bounce 1.2s infinite ease-in-out;
+        }
+
+        .typing .dot:nth-child(2) { animation-delay: 0.15s; }
+        .typing .dot:nth-child(3) { animation-delay: 0.3s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+            40% { transform: translateY(-4px); opacity: 1; }
+        }
+
+        /* ── Input ── */
+        .input-wrap {
+            border-top: 1px solid var(--border);
+            padding: 10px 12px 12px;
+            background: rgba(255,255,255,0.01);
+            flex-shrink: 0;
+        }
+
+        .input-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            min-height: 20px;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+        }
+
+        textarea {
+            flex: 1;
+            resize: none;
+            min-height: 46px;
+            max-height: 180px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: #12151d;
+            color: var(--fg);
+            font-family: "Geist", sans-serif;
+            font-size: 14px;
+            line-height: 1.4;
+            padding: 11px 12px;
+            outline: none;
+            transition: border-color 150ms ease;
+        }
+
+        textarea:focus { border-color: #3f3f46; }
+
+        .action-btn {
+            background: #20242f;
+            min-width: 72px;
+            height: 46px;
+            font-weight: 500;
+            font-size: 13px;
+        }
+
+        .action-btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .stop-btn {
+            background: #2b1a1a;
+            border-color: #632828;
+            color: #f87171;
+            min-width: 72px;
+            height: 46px;
+            font-weight: 500;
+            font-size: 13px;
+            display: none;
+        }
+
+        .stop-btn.visible { display: flex; align-items: center; justify-content: center; gap: 5px; }
+        .stop-btn:hover { background: #3b1f1f; }
+
+        /* ── Terminal panel ── */
+        .terminal-scroll {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .thinking-line {
+            font-size: 11.5px;
+            color: #9aa1b1;
+            font-family: "JetBrains Mono", monospace;
+            letter-spacing: 0.01em;
+            opacity: 0.7;
+            animation: pulse 1.4s infinite ease-in-out;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.8; }
+        }
+
+        .tool-block {
+            border: 1px solid var(--border);
+            background: #12151b;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .tool-block.success { border-color: #1a2e1a; }
+        .tool-block.error-block { border-color: #2e1a1a; }
+
+        .tool-label {
+            padding: 7px 10px;
+            border-bottom: 1px solid var(--border);
+            font-size: 12px;
+            background: #171a22;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .tool-block.success .tool-label { background: #111a11; border-bottom-color: #1a2e1a; }
+        .tool-block.error-block .tool-label { background: #1a1111; border-bottom-color: #2e1a1a; }
+
+        .tool-name {
+            color: #d4d8e0;
+            font-family: "JetBrains Mono", monospace;
+            font-size: 11.5px;
+            font-weight: 500;
+        }
+
+        .tool-block.success .tool-name { color: #86efac; }
+        .tool-block.error-block .tool-name { color: #fca5a5; }
+
+        .tool-args {
+            color: #7a8294;
+            font-family: "JetBrains Mono", monospace;
+            font-size: 11px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 65%;
+        }
+
+        .tool-status {
+            font-size: 10px;
+            font-family: "JetBrains Mono", monospace;
+            padding: 1px 6px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        .tool-status.ok { background: #14301a; color: #4ade80; }
+        .tool-status.err { background: #301414; color: #f87171; }
+        .tool-status.running { background: #2a2a14; color: #facc15; }
+
+        .tool-output {
+            margin: 0;
+            padding: 10px;
+            max-height: 200px;
+            overflow: auto;
+            white-space: pre-wrap;
+            color: #c6ccda;
+            font-family: "JetBrains Mono", monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            background: #0f1218;
+        }
+
+        /* ── Scrollbar ── */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #2a2d35; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #363a44; }
+
+        /* ── Mobile ── */
+        @media (max-width: 900px) {
+            .app { flex-direction: column; }
+            .chat-panel, .terminal-panel { width: 100%; min-width: 0; }
+            .chat-panel { height: 58vh; border-right: 0; border-bottom: 1px solid var(--border); }
+            .terminal-panel { height: 42vh; border-left: 0; }
+            .app.terminal-collapsed .terminal-panel { height: 0; }
+        }
+
+        /* ── Settings Modal ── */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+        }
+        .modal h2 {
+            margin: 0 0 16px 0;
+            font-size: 18px;
+            color: var(--fg);
+        }
+        .modal label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: var(--muted);
+        }
+        .modal input {
+            width: 100%;
+            padding: 10px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            color: var(--fg);
+            font-family: "JetBrains Mono", monospace;
+            font-size: 12px;
+            margin-bottom: 16px;
+        }
+        .modal-buttons {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .auth-status {
+            font-size: 12px;
+            padding: 8px;
+            border-radius: 5px;
+            margin-bottom: 16px;
+        }
+        .auth-status.success {
+            background: rgba(74, 222, 128, 0.1);
+            color: var(--success);
+        }
+        .auth-status.error {
+            background: rgba(248, 113, 113, 0.1);
+            color: var(--error);
+        }
+    </style>
+</head>
+<body>
+<div class="app" id="appRoot">
+
+    <!-- Chat panel -->
+    <section class="chat-panel">
+        <header class="topbar">
+            <div class="topbar-left">
+                <span class="status-dot" id="statusDot"></span>
+                <span class="topbar-title">Jarvis</span>
+                <span class="model-badge" id="modelBadge">qwen2.5-coder:7b</span>
+            </div>
+            <div class="topbar-right">
+                <button class="icon-btn" id="settingsBtn" type="button">⚙️ Settings</button>
+                <button class="icon-btn" id="clearChatBtn" type="button">Clear</button>
+                <button class="icon-btn" id="toggleTerminalBtn" type="button">Hide Terminal</button>
+            </div>
+        </header>
+
+        <main class="chat-scroll" id="chatScroll"></main>
+
+        <div class="input-wrap">
+            <div class="input-meta">
+                <div class="typing" id="typingIndicator" aria-live="polite">
+                    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                    <span id="typingText">Thinking...</span>
+                </div>
+            </div>
+            <div class="input-row">
+                <textarea id="messageInput" placeholder="Ask Jarvis anything..." rows="2"></textarea>
+                <button class="action-btn" id="sendBtn" type="button">Send</button>
+                <button class="stop-btn" id="stopBtn" type="button">■ Stop</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Terminal panel -->
+    <aside class="terminal-panel" id="terminalPanel">
+        <header class="topbar">
+            <div class="topbar-title">Tool Output</div>
+            <div class="topbar-right">
+                <button class="icon-btn" id="clearTerminalBtn" type="button">Clear</button>
+            </div>
+        </header>
+        <div class="terminal-scroll" id="terminalScroll"></div>
+    </aside>
+
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settingsModal">
+    <div class="modal">
+        <h2>Settings</h2>
+        <div id="authStatus" class="auth-status" style="display: none;"></div>
+        <label for="apiKeyInput">API Key (Bearer Token)</label>
+        <input type="password" id="apiKeyInput" placeholder="Enter your API key" />
+        <p style="font-size: 12px; color: var(--muted); margin-top: -8px;">
+            Find your API key in ~/.jarvis/api_keys.txt on the server
+        </p>
+        <div class="modal-buttons">
+            <button class="icon-btn" id="cancelSettingsBtn">Cancel</button>
+            <button class="icon-btn" id="saveSettingsBtn">Save</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script>
+    const appRoot       = document.getElementById("appRoot");
+    const chatScroll    = document.getElementById("chatScroll");
+    const terminalScroll= document.getElementById("terminalScroll");
+    const toggleBtn     = document.getElementById("toggleTerminalBtn");
+    const clearTermBtn  = document.getElementById("clearTerminalBtn");
+    const clearChatBtn  = document.getElementById("clearChatBtn");
+    const messageInput  = document.getElementById("messageInput");
+    const sendBtn       = document.getElementById("sendBtn");
+    const stopBtn       = document.getElementById("stopBtn");
+    const typingIndicator = document.getElementById("typingIndicator");
+    const typingText    = document.getElementById("typingText");
+    const statusDot     = document.getElementById("statusDot");
+    const settingsBtn   = document.getElementById("settingsBtn");
+    const settingsModal = document.getElementById("settingsModal");
+    const apiKeyInput   = document.getElementById("apiKeyInput");
+    const saveSettingsBtn = document.getElementById("saveSettingsBtn");
+    const cancelSettingsBtn = document.getElementById("cancelSettingsBtn");
+    const authStatus    = document.getElementById("authStatus");
+
+    const messages = [];
+    let inFlight = false;
+    let currentToolBlock = null;
+    let abortController = null;
+    let apiKey = localStorage.getItem("jarvis_api_key") || "";
+    let csrfToken = null;
+    function createThreadId() {
+        if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+        return `thread-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+    let currentThreadId = localStorage.getItem("jarvis_thread_id") || createThreadId();
+    localStorage.setItem("jarvis_thread_id", currentThreadId);
+
+    // ── Fetch CSRF token ──
+    async function fetchCsrfToken() {
+        try {
+            const headers = {};
+            if (apiKey) {
+                headers["Authorization"] = `Bearer ${apiKey}`;
+            }
+            const response = await fetch("/csrf-token", { headers });
+            if (response.ok) {
+                const data = await response.json();
+                csrfToken = data.csrf_token;
+            }
+        } catch (e) {
+            console.error("Failed to fetch CSRF token:", e);
+        }
+    }
+
+    // ── marked config ──
+    marked.setOptions({
+        gfm: true,
+        breaks: true,
+        highlight(code, lang) {
+            if (lang && hljs.getLanguage(lang)) return hljs.highlight(code, { language: lang }).value;
+            return hljs.highlightAuto(code).value;
+        }
+    });
+
+    function escapeHtml(v) {
+        return String(v)
+            .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+
+    function scrollBottom(el) { el.scrollTop = el.scrollHeight; }
+
+    function setBusy(busy) {
+        inFlight = busy;
+        statusDot.classList.toggle("busy", busy);
+        sendBtn.disabled = busy;
+        sendBtn.style.display = busy ? "none" : "";
+        stopBtn.classList.toggle("visible", busy);
+        typingIndicator.classList.toggle("visible", busy);
+    }
+
+    function setTypingText(text) { typingText.textContent = text; }
+
+    // ── Chat messages ──
+    function addChatMessage(role, content, isError = false) {
+        const el = document.createElement("article");
+        el.className = `msg ${isError ? "error" : role}`;
+
+        if (role === "assistant" && !isError) {
+            el.innerHTML = marked.parse(content || "");
+            // Add copy buttons to code blocks
+            el.querySelectorAll("pre").forEach(pre => {
+                const btn = document.createElement("button");
+                btn.className = "copy-btn";
+                btn.textContent = "Copy";
+                btn.addEventListener("click", () => {
+                    const code = pre.querySelector("code");
+                    navigator.clipboard.writeText(code ? code.innerText : pre.innerText).then(() => {
+                        btn.textContent = "Copied!";
+                        setTimeout(() => btn.textContent = "Copy", 1500);
+                    });
+                });
+                pre.style.position = "relative";
+                pre.appendChild(btn);
+            });
+            el.querySelectorAll("pre code").forEach(b => hljs.highlightElement(b));
+        } else {
+            el.innerHTML = `<p>${escapeHtml(content || "")}</p>`;
+        }
+
+        chatScroll.appendChild(el);
+        scrollBottom(chatScroll);
+        return el;
+    }
+
+    // ── Terminal entries ──
+    function addThinkingLine(step) {
+        const line = document.createElement("div");
+        line.className = "thinking-line";
+        line.textContent = `→ step ${step}`;
+        terminalScroll.appendChild(line);
+        scrollBottom(terminalScroll);
+    }
+
+    function addToolCall(tool, args) {
+        // Mark previous block done if pending
+        if (currentToolBlock) finalizeToolBlock(currentToolBlock, null);
+
+        const block = document.createElement("section");
+        block.className = "tool-block";
+
+        const label = document.createElement("div");
+        label.className = "tool-label";
+
+        const nameEl = document.createElement("span");
+        nameEl.className = "tool-name";
+        nameEl.textContent = tool;
+
+        const argsEl = document.createElement("span");
+        argsEl.className = "tool-args";
+        const argsStr = JSON.stringify(args || {});
+        argsEl.textContent = argsStr === "{}" ? "" : argsStr;
+
+        const statusEl = document.createElement("span");
+        statusEl.className = "tool-status running";
+        statusEl.textContent = "running";
+
+        label.appendChild(nameEl);
+        label.appendChild(argsEl);
+        label.appendChild(statusEl);
+
+        const output = document.createElement("pre");
+        output.className = "tool-output";
+        output.textContent = "";
+
+        block.appendChild(label);
+        block.appendChild(output);
+        terminalScroll.appendChild(block);
+
+        currentToolBlock = { block, output, statusEl };
+        scrollBottom(terminalScroll);
+    }
+
+    function finalizeToolBlock(tb, resultText) {
+        if (!tb) return;
+        // Detect error from result text
+        let isError = false;
+        if (resultText) {
+            try {
+                const parsed = JSON.parse(resultText);
+                isError = parsed.status === "error";
+            } catch (_) {}
+        }
+        tb.block.classList.add(isError ? "error-block" : "success");
+        tb.statusEl.className = `tool-status ${isError ? "err" : "ok"}`;
+        tb.statusEl.textContent = isError ? "error" : "ok";
+    }
+
+    function appendToolResult(output) {
+        if (!currentToolBlock) { addToolCall("result", {}); }
+        const text = typeof output === "string" ? output : JSON.stringify(output);
+        currentToolBlock.output.textContent = text;
+        finalizeToolBlock(currentToolBlock, text);
+        currentToolBlock = null;
+        scrollBottom(terminalScroll);
+    }
+
+    // ── SSE streaming ──
+    async function streamSSE(payload, onEvent) {
+        abortController = new AbortController();
+        const headers = { "Content-Type": "application/json" };
+        if (apiKey) {
+            headers["Authorization"] = `Bearer ${apiKey}`;
+        }
+        if (!csrfToken) {
+            await fetchCsrfToken();
+        }
+        if (csrfToken) {
+            headers["X-CSRF-Token"] = csrfToken;
+        }
+        const response = await fetch("/stream", {
+            method: "POST",
+            headers: headers,
+            body: JSON.stringify(payload),
+            signal: abortController.signal
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.body) throw new Error("Readable stream not available");
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            let idx;
+            while ((idx = buffer.indexOf("\n\n")) !== -1) {
+                const raw = buffer.slice(0, idx);
+                buffer = buffer.slice(idx + 2);
+                const dataLines = raw.split("\n")
+                    .filter(l => l.startsWith("data:"))
+                    .map(l => l.slice(5).trim());
+                if (!dataLines.length) continue;
+                try { onEvent(JSON.parse(dataLines.join("\n"))); }
+                catch (e) { console.error("SSE parse error", e); }
+            }
+        }
+    }
+
+    // ── Send message ──
+    async function sendMessage() {
+        const text = messageInput.value.trim();
+        if (!text || inFlight) return;
+
+        setBusy(true);
+        setTypingText("Thinking...");
+        currentToolBlock = null;
+
+        addChatMessage("user", text);
+        messages.push({ role: "user", content: text });
+        messageInput.value = "";
+        autoResize();
+
+        let finalResponse = "";
+
+        try {
+            await streamSSE({ prompt: text, history: messages, thread_id: currentThreadId, include_global_memory: true }, (event) => {
+                if (!event?.type) return;
+
+                switch (event.type) {
+                    case "thinking":
+                        setTypingText(`Step ${event.step || "?"}...`);
+                        addThinkingLine(event.step || "?");
+                        break;
+
+                    case "tool_call":
+                        setTypingText(`Running ${event.tool || "tool"}...`);
+                        addToolCall(event.tool || "unknown", event.args || {});
+                        break;
+
+                    case "tool_result":
+                        appendToolResult(event.output || "");
+                        setTypingText("Thinking...");
+                        break;
+
+                    case "final":
+                        finalResponse = event.response || "";
+                        messages.push({ role: "assistant", content: finalResponse });
+                        addChatMessage("assistant", finalResponse);
+                        break;
+
+                    case "error":
+                        if (currentToolBlock) finalizeToolBlock(currentToolBlock, JSON.stringify({ status: "error" }));
+                        currentToolBlock = null;
+                        addChatMessage("assistant", event.message || "Unknown error", true);
+                        break;
+                }
+            });
+        } catch (err) {
+            if (err.name !== "AbortError") {
+                addChatMessage("assistant", `Stream error: ${err.message || err}`, true);
+            }
+        } finally {
+            if (currentToolBlock) finalizeToolBlock(currentToolBlock, null);
+            currentToolBlock = null;
+            abortController = null;
+            setBusy(false);
+        }
+    }
+
+    function stopInference() {
+        if (abortController) {
+            abortController.abort();
+            abortController = null;
+        }
+        setBusy(false);
+    }
+
+    function autoResize() {
+        messageInput.style.height = "auto";
+        messageInput.style.height = `${Math.min(messageInput.scrollHeight, 180)}px`;
+    }
+
+    // ── Event listeners ──
+    messageInput.addEventListener("input", autoResize);
+    messageInput.addEventListener("keydown", e => {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    });
+    sendBtn.addEventListener("click", sendMessage);
+    stopBtn.addEventListener("click", stopInference);
+
+    clearTermBtn.addEventListener("click", () => {
+        terminalScroll.innerHTML = "";
+        currentToolBlock = null;
+    });
+
+    clearChatBtn.addEventListener("click", () => {
+        chatScroll.innerHTML = "";
+        messages.length = 0;
+        currentThreadId = createThreadId();
+        localStorage.setItem("jarvis_thread_id", currentThreadId);
+        addChatMessage("assistant", "Chat cleared. How can I help?");
+        messages.push({ role: "assistant", content: "Chat cleared. How can I help?" });
+    });
+
+    toggleBtn.addEventListener("click", () => {
+        appRoot.classList.toggle("terminal-collapsed");
+        toggleBtn.textContent = appRoot.classList.contains("terminal-collapsed") ? "Show Terminal" : "Hide Terminal";
+    });
+
+    // ── Settings modal ──
+    settingsBtn.addEventListener("click", () => {
+        apiKeyInput.value = apiKey;
+        authStatus.style.display = "none";
+        settingsModal.classList.add("show");
+    });
+
+    cancelSettingsBtn.addEventListener("click", () => {
+        settingsModal.classList.remove("show");
+    });
+
+    saveSettingsBtn.addEventListener("click", async () => {
+        const newKey = apiKeyInput.value.trim();
+        
+        // Test the API key
+        try {
+            const headers = { "Content-Type": "application/json" };
+            if (newKey) {
+                headers["Authorization"] = `Bearer ${newKey}`;
+            }
+            const response = await fetch("/health", { headers });
+            
+            if (response.ok) {
+                apiKey = newKey;
+                localStorage.setItem("jarvis_api_key", apiKey);
+                authStatus.className = "auth-status success";
+                authStatus.textContent = "✓ API key saved successfully!";
+                authStatus.style.display = "block";
+                
+                // Refetch CSRF token with new API key
+                await fetchCsrfToken();
+                
+                setTimeout(() => {
+                    settingsModal.classList.remove("show");
+                }, 1500);
+            } else {
+                authStatus.className = "auth-status error";
+                authStatus.textContent = `✗ Authentication failed: HTTP ${response.status}`;
+                authStatus.style.display = "block";
+            }
+        } catch (err) {
+            authStatus.className = "auth-status error";
+            authStatus.textContent = `✗ Error testing API key: ${err.message}`;
+            authStatus.style.display = "block";
+        }
+    });
+
+    // Close modal on outside click
+    settingsModal.addEventListener("click", (e) => {
+        if (e.target === settingsModal) {
+            settingsModal.classList.remove("show");
+        }
+    });
+
+    // ── Init ──
+    addChatMessage("assistant", "Online. I have access to your homelab — Docker, filesystem, and terminal. What do you need?");
+    messages.push({ role: "assistant", content: "Online. I have access to your homelab — Docker, filesystem, and terminal. What do you need?" });
+    autoResize();
+    messageInput.focus();
+    
+    // Fetch CSRF token on page load
+    fetchCsrfToken();
+
+    // Check if API key is set, show settings if not
+    if (!apiKey) {
+        setTimeout(() => {
+            authStatus.className = "auth-status error";
+            authStatus.textContent = "⚠ No API key set. Please configure your API key.";
+            authStatus.style.display = "block";
+            settingsModal.classList.add("show");
+        }, 1000);
+    }
+</script>
+</body>
+</html>

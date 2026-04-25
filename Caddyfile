@@ -1,0 +1,11 @@
+{
+  admin off
+}
+
+:443, jarvis.tail8b9d38.ts.net {
+  bind tailscale/jarvis
+  tls {
+    get_certificate tailscale
+  }
+  reverse_proxy jarvis:8000
+}

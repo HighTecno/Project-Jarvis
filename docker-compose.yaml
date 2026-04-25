@@ -1,0 +1,63 @@
+services:
+  jarvis:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - WORKSPACE_PATH=/workspace
+      - SERVICE_ROOT=/hostroot/root
+      - LLM_TIMEOUT_ENABLED=false
+      - PENTEST_CONFIG=/workspace/pentest_config.yaml
+      - PENTEST_LOGS_DIR=/workspace/pentest_logs
+      - KALI_CONTAINER=kali
+    volumes:
+      - ts_state:/var/lib/tailscale
+      - workspace:/workspace                    # sandbox, full rw
+      - /:/hostroot:ro           
+      - /var/run/docker.sock:/var/run/docker.sock  
+      - /usr/bin/tailscale:/usr/bin/tailscale:ro
+      - nextcloud_aio_nextcloud_data:/nextcloud:ro
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  kali:
+    image: kalilinux/kali-rolling
+    container_name: kali
+    command: ["sleep", "infinity"]
+    tty: true
+    stdin_open: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      - jarvis-net
+
+  caddy:
+    build:
+      context: .
+      dockerfile: Caddy.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ts_state_caddy:/config
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+
+networks:
+  jarvis-net:
+    driver: bridge
+
+volumes:
+  ts_state:
+  ts_state_caddy:
+  workspace:
+  nextcloud_aio_nextcloud_data:
+    external: true
