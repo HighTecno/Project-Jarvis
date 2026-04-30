@@ -22,6 +22,7 @@ LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "120"))
 LLM_TIMEOUT_ENABLED = os.getenv("LLM_TIMEOUT_ENABLED", "false").lower() == "true"
 TERMINAL_TIMEOUT_SECONDS = int(os.getenv("TERMINAL_TIMEOUT_SECONDS", "10"))
 MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "12000"))
+AGENT_MAX_HISTORY_MESSAGES = int(os.getenv("AGENT_MAX_HISTORY_MESSAGES", "40"))
 
 # Workspace path for file writes (defaults to current directory if not set)
 WORKSPACE_PATH = os.getenv("WORKSPACE_PATH", os.getcwd())

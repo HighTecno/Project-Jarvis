@@ -7,6 +7,7 @@ try:
     from backend.agent.schema import validate_tool_call
     from backend.tools.registry import execute_tool
     from backend.config import (
+        AGENT_MAX_HISTORY_MESSAGES,
         LLM_TIMEOUT_ENABLED,
         LLM_TIMEOUT_SECONDS,
         MAX_STEPS,
@@ -25,6 +26,7 @@ except ImportError:
         from agent.schema import validate_tool_call
         from tools.registry import execute_tool
         from config import (
+            AGENT_MAX_HISTORY_MESSAGES,
             LLM_TIMEOUT_ENABLED,
             LLM_TIMEOUT_SECONDS,
             MAX_STEPS,
@@ -42,6 +44,7 @@ except ImportError:
         from .schema import validate_tool_call
         from ..tools.registry import execute_tool
         from ..config import (
+            AGENT_MAX_HISTORY_MESSAGES,
             LLM_TIMEOUT_ENABLED,
             LLM_TIMEOUT_SECONDS,
             MAX_STEPS,
@@ -152,6 +155,14 @@ def run_agent(
     for step in range(MAX_STEPS):
         logger.debug(f"Agent step {step}")
         _emit_event(on_event, "thinking", {"step": step + 1})
+
+        if len(messages) > AGENT_MAX_HISTORY_MESSAGES:
+            trimmed = len(messages) - AGENT_MAX_HISTORY_MESSAGES
+            logger.warning(
+                "History cap reached, trimming oldest messages",
+                extra={"trimmed": trimmed, "cap": AGENT_MAX_HISTORY_MESSAGES},
+            )
+            messages = [messages[0]] + messages[-(AGENT_MAX_HISTORY_MESSAGES - 1):]
 
         try:
             llm_timeout = LLM_TIMEOUT_SECONDS if LLM_TIMEOUT_ENABLED else None
