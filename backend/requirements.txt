@@ -1,5 +1,7 @@
 fastapi
 uvicorn
+psycopg2-binary>=2.9
+pgvector>=0.3
 ollama
 pyttsx3
 SpeechRecognition

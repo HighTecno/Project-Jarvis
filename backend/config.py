@@ -15,6 +15,10 @@ GOOGLE_API_ENDPOINT = os.getenv(
     "https://generativelanguage.googleapis.com/v1beta",
 )
 
+# PostgreSQL / pgvector configuration
+POSTGRES_URL = os.getenv("POSTGRES_URL", "")
+EMBED_DIMENSIONS = int(os.getenv("EMBED_DIMENSIONS", "768"))
+
 # Agent configuration
 MAX_STEPS = int(os.getenv("MAX_STEPS", "8"))
 MAX_TOOL_CALLS = int(os.getenv("MAX_TOOL_CALLS", "6"))

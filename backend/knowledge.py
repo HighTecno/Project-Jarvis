@@ -18,6 +18,7 @@ try:
         OLLAMA_MODEL,
         OLLAMA_ENDPOINT,
         MEMORY_DB_PATH,
+        POSTGRES_URL,
     )
     from backend.logger import get_logger
 except ImportError:
@@ -31,6 +32,7 @@ except ImportError:
             OLLAMA_MODEL,
             OLLAMA_ENDPOINT,
             MEMORY_DB_PATH,
+            POSTGRES_URL,
         )
         from logger import get_logger
     except ImportError:
@@ -43,6 +45,7 @@ except ImportError:
             OLLAMA_MODEL,
             OLLAMA_ENDPOINT,
             MEMORY_DB_PATH,
+            POSTGRES_URL,
         )
         from .logger import get_logger
 
@@ -508,6 +511,29 @@ def knowledge_stats() -> Dict[str, Any]:
     finally:
         conn.close()
 
+
+# --- Provider dispatch ---
+if POSTGRES_URL:
+    try:
+        from backend.knowledge_pg import (  # noqa: F401
+            init_knowledge_schema,
+            ingest_file,
+            ingest_directory,
+            search_knowledge,
+            knowledge_stats,
+        )
+        logger.info("Knowledge provider: PostgreSQL + pgvector")
+    except ImportError:
+        from knowledge_pg import (  # noqa: F401
+            init_knowledge_schema,
+            ingest_file,
+            ingest_directory,
+            search_knowledge,
+            knowledge_stats,
+        )
+        logger.info("Knowledge provider: PostgreSQL + pgvector")
+else:
+    logger.info("Knowledge provider: SQLite")
 
 try:
     init_knowledge_schema()

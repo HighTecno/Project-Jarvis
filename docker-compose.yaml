@@ -1,4 +1,16 @@
 services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: jarvis
+      POSTGRES_USER: jarvis
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - jarvis-net
+
   jarvis:
     build:
       context: .
@@ -13,17 +25,22 @@ services:
       - PENTEST_CONFIG=/workspace/pentest_config.yaml
       - PENTEST_LOGS_DIR=/workspace/pentest_logs
       - KALI_CONTAINER=kali
+      - POSTGRES_URL=postgresql://jarvis:${POSTGRES_PASSWORD}@postgres:5432/jarvis
     volumes:
       - ts_state:/var/lib/tailscale
       - workspace:/workspace                    # sandbox, full rw
-      - /:/hostroot:ro           
-      - /var/run/docker.sock:/var/run/docker.sock  
+      - /:/hostroot:ro
+      - /var/run/docker.sock:/var/run/docker.sock
       - /usr/bin/tailscale:/usr/bin/tailscale:ro
       - nextcloud_aio_nextcloud_data:/nextcloud:ro
     ports:
       - "8000:8000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - jarvis-net
+    depends_on:
+      - postgres
 
   kali:
     image: kalilinux/kali-rolling
@@ -59,5 +76,6 @@ volumes:
   ts_state:
   ts_state_caddy:
   workspace:
+  postgres_data:
   nextcloud_aio_nextcloud_data:
     external: true

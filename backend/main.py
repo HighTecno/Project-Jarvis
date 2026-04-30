@@ -771,6 +771,124 @@ async def prune_memory_items(
     deleted = prune_unpinned_memories(max_items=max_items)
     return {"deleted": deleted, "max_items": max_items}
 
+@app.post("/memory/migrate-to-postgres")
+async def migrate_to_postgres(
+    authenticated: bool = Depends(verify_auth),
+    csrf_valid: bool = Depends(validate_csrf_token),
+):
+    """Copy all SQLite memory data to PostgreSQL. Idempotent — safe to re-run."""
+    try:
+        from backend.config import POSTGRES_URL, MEMORY_DB_PATH
+    except ImportError:
+        from config import POSTGRES_URL, MEMORY_DB_PATH
+
+    if not POSTGRES_URL:
+        return {"error": "POSTGRES_URL is not set — PostgreSQL backend is not configured"}, 400
+
+    try:
+        import sqlite3, json
+        from backend.db_pg import get_pg_conn, init_pg_schema
+    except ImportError:
+        from db_pg import get_pg_conn, init_pg_schema
+
+    init_pg_schema()
+
+    import os
+    if not os.path.exists(MEMORY_DB_PATH):
+        return {"migrated_memory": 0, "migrated_threads": 0, "migrated_knowledge": 0,
+                "note": "SQLite DB not found — nothing to migrate"}
+
+    sqlite_conn = sqlite3.connect(MEMORY_DB_PATH)
+    sqlite_conn.row_factory = sqlite3.Row
+    migrated_threads = migrated_messages = migrated_memory = migrated_knowledge = 0
+
+    try:
+        with get_pg_conn() as pg_conn:
+            with pg_conn.cursor() as cur:
+                # Threads
+                rows = sqlite_conn.execute("SELECT id, title, created_at, updated_at FROM chat_threads").fetchall()
+                for row in rows:
+                    cur.execute(
+                        """INSERT INTO chat_threads (id, title, created_at, updated_at)
+                           VALUES (%s, %s, %s::timestamptz, %s::timestamptz)
+                           ON CONFLICT (id) DO NOTHING""",
+                        (row["id"], row["title"], row["created_at"], row["updated_at"]),
+                    )
+                    migrated_threads += cur.rowcount
+
+                # Messages
+                rows = sqlite_conn.execute(
+                    "SELECT thread_id, role, content, created_at FROM chat_messages"
+                ).fetchall()
+                for row in rows:
+                    cur.execute(
+                        """INSERT INTO chat_messages (thread_id, role, content, created_at)
+                           VALUES (%s, %s, %s, %s::timestamptz)""",
+                        (row["thread_id"], row["role"], row["content"], row["created_at"]),
+                    )
+                    migrated_messages += 1
+
+                # Memory items
+                rows = sqlite_conn.execute(
+                    "SELECT type, summary, content, embedding, tags, scope, thread_id, source, pinned, created_at, updated_at FROM memory_items"
+                ).fetchall()
+                for row in rows:
+                    emb = None
+                    if row["embedding"]:
+                        try:
+                            emb = json.dumps(json.loads(row["embedding"]))
+                        except Exception:
+                            pass
+                    cur.execute(
+                        """INSERT INTO memory_items
+                               (type, summary, content, embedding, tags, scope, thread_id, source, pinned, created_at, updated_at)
+                           VALUES (%s, %s, %s, %s::vector, %s::jsonb, %s, %s, %s, %s, %s::timestamptz, %s::timestamptz)""",
+                        (
+                            row["type"], row["summary"], row["content"],
+                            emb, row["tags"] or "[]",
+                            row["scope"] or "global", row["thread_id"], row["source"] or "conversation",
+                            bool(row["pinned"]), row["created_at"], row["updated_at"],
+                        ),
+                    )
+                    migrated_memory += 1
+
+                # Knowledge chunks (SQLite uses 'source' column, PG uses 'file_path')
+                try:
+                    rows = sqlite_conn.execute(
+                        "SELECT source, chunk_index, content, embedding FROM knowledge_chunks"
+                    ).fetchall()
+                    for row in rows:
+                        import numpy as np
+                        emb = None
+                        if row["embedding"]:
+                            try:
+                                vec = np.frombuffer(row["embedding"], dtype=np.float32).tolist()
+                                emb = json.dumps(vec)
+                            except Exception:
+                                pass
+                        cur.execute(
+                            """INSERT INTO knowledge_chunks (file_path, chunk_index, content, embedding)
+                               VALUES (%s, %s, %s, %s::vector)
+                               ON CONFLICT (file_path, chunk_index) DO NOTHING""",
+                            (row["source"], row["chunk_index"], row["content"], emb),
+                        )
+                        migrated_knowledge += cur.rowcount
+                except Exception:
+                    pass  # knowledge table may not exist
+
+        return {
+            "migrated_threads": migrated_threads,
+            "migrated_messages": migrated_messages,
+            "migrated_memory": migrated_memory,
+            "migrated_knowledge": migrated_knowledge,
+        }
+    except Exception as exc:
+        logger.error(f"Migration failed: {exc}")
+        return {"error": str(exc)}
+    finally:
+        sqlite_conn.close()
+
+
 @app.get("/static/")
 async def serve_ui():
     if not os.path.exists(INDEX_FILE):

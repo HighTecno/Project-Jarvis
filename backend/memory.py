@@ -15,6 +15,7 @@ try:
         EMBED_MODEL,
         OLLAMA_ENDPOINT,
         OLLAMA_MODEL,
+        POSTGRES_URL,
     )
     from backend.logger import get_logger
 except ImportError:
@@ -27,6 +28,7 @@ except ImportError:
             EMBED_MODEL,
             OLLAMA_ENDPOINT,
             OLLAMA_MODEL,
+            POSTGRES_URL,
         )
         from logger import get_logger
     except ImportError:
@@ -38,6 +40,7 @@ except ImportError:
             EMBED_MODEL,
             OLLAMA_ENDPOINT,
             OLLAMA_MODEL,
+            POSTGRES_URL,
         )
         from .logger import get_logger
 
@@ -962,6 +965,50 @@ Summary:"""
         logger.error(f"Failed to summarize and store: {e}")
         return False
 
+
+# --- Provider dispatch ---
+# When POSTGRES_URL is set, override the SQLite functions above with the
+# PostgreSQL + pgvector implementations. The SQLite definitions are still
+# executed (they just define names), but the PG names take precedence.
+if POSTGRES_URL:
+    try:
+        from backend.memory_pg import (  # noqa: F401
+            init_memory_schema,
+            ensure_thread,
+            append_thread_exchange,
+            get_thread_history,
+            list_threads,
+            migrate_history_file,
+            store_memory,
+            retrieve_memories,
+            summarize_and_store,
+            list_memory_items,
+            set_memory_pinned,
+            delete_memory_item,
+            prune_unpinned_memories,
+            get_embedding,
+        )
+        logger.info("Memory provider: PostgreSQL + pgvector")
+    except ImportError:
+        from memory_pg import (  # noqa: F401
+            init_memory_schema,
+            ensure_thread,
+            append_thread_exchange,
+            get_thread_history,
+            list_threads,
+            migrate_history_file,
+            store_memory,
+            retrieve_memories,
+            summarize_and_store,
+            list_memory_items,
+            set_memory_pinned,
+            delete_memory_item,
+            prune_unpinned_memories,
+            get_embedding,
+        )
+        logger.info("Memory provider: PostgreSQL + pgvector")
+else:
+    logger.info("Memory provider: SQLite")
 
 # Initialize schema on module import (if enabled)
 try:
